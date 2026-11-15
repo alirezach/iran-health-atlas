@@ -1,0 +1,139 @@
+/*-- scss:defaults --*/
+@import url("https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Vazirmatn:wght@400;600&display=swap");
+
+// Palette: lapis and night-blue tilework with saffron accents.
+// Drive-time ramp (saffron -> lapis) falls monotonically in lightness, so it
+// stays readable in greyscale and for red-green colour-vision deficiency.
+$lapis: #1F3A93;
+$night: #13204A;
+$saffron: #E3B456;
+$ink: #1B2233;
+$paper: #F4F6FA;
+$muted: #5B6478;
+
+$body-bg: $paper;
+$body-color: $ink;
+$primary: $lapis;
+$secondary: $muted;
+$link-color: $lapis;
+$font-family-sans-serif: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+$font-family-monospace: "IBM Plex Mono", ui-monospace, monospace;
+$headings-font-family: "Familjen Grotesk", "IBM Plex Sans", sans-serif;
+$headings-font-weight: 600;
+$font-size-root: 16px;
+$border-radius: 0.5rem;
+$navbar-bg: $night;
+$navbar-fg: #F4E3B5;
+$navbar-hl: #FFFFFF;
+$footer-bg: $paper;
+$footer-fg: $muted;
+
+/*-- scss:rules --*/
+:root {
+  --atlas-lapis: #{$lapis};
+  --atlas-night: #{$night};
+  --atlas-saffron: #{$saffron};
+  --atlas-muted: #{$muted};
+  --atlas-card: #FFFFFF;
+  --atlas-line: #DDE2EC;
+}
+
+.navbar-title { font-family: $headings-font-family; font-weight: 600; letter-spacing: -0.01em; }
+
+.quarto-title .title {
+  font-size: clamp(2.1rem, 6.5vw, 3.8rem);
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  color: $night;
+}
+.quarto-title .subtitle { color: $muted; font-size: clamp(1.05rem, 2.4vw, 1.35rem); }
+h2 { margin-top: 2.5rem; letter-spacing: -0.01em; color: $night; }
+
+.fa { font-family: "Vazirmatn", sans-serif; direction: rtl; unicode-bidi: isolate; }
+.atlas-fa { display: block; text-align: right; font-size: 1.35rem; font-weight: 600; color: $lapis; margin: -0.5rem 0 1.5rem; }
+
+// Signature: the population ribbon ------------------------------------------
+.atlas-kicker { font-size: 1rem; color: $muted; margin: 0 0 0.5rem; }
+.atlas-ribbon {
+  display: flex;
+  width: 100%;
+  height: 72px;
+  border-radius: 0.6rem;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(19, 32, 74, 0.08);
+  transform-origin: left center;
+  animation: atlas-grow 1.1s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.atlas-ribbon .seg {
+  display: flex;
+  align-items: flex-end;
+  min-width: 2px;
+  padding: 0.45rem 0.55rem;
+  font-family: $font-family-monospace;
+  font-weight: 600;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+@keyframes atlas-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .atlas-ribbon { animation: none; } }
+.ribbon-legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; margin-top: 0.6rem; font-size: 0.875rem; color: $muted; }
+.ribbon-legend i, .legend-item i {
+  display: inline-block; width: 0.85rem; height: 0.85rem; border-radius: 3px;
+  margin-right: 0.4rem; vertical-align: -2px; box-shadow: inset 0 0 0 1px rgba(19, 32, 74, 0.12);
+}
+
+// Threshold ladder ----------------------------------------------------------
+.ladder { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin: 1.25rem 0; }
+@media (min-width: 768px) { .ladder { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.rung {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  background: var(--atlas-card); border-radius: 0.6rem; padding: 1rem;
+  border-top: 6px solid var(--rung-color);
+}
+.rung .t { font-size: 0.875rem; color: $muted; text-transform: uppercase; letter-spacing: 0.06em; }
+.rung .v { font-family: $font-family-monospace; font-weight: 600; font-size: clamp(2rem, 6vw, 2.9rem); line-height: 1.05; color: $night; }
+.rung .p { font-size: 0.875rem; color: $muted; }
+.facts { display: flex; flex-wrap: wrap; gap: 0.5rem 1.6rem; font-size: 1rem; color: $muted; }
+.facts b { font-family: $font-family-monospace; color: $night; font-weight: 600; }
+.atlas-stamp { margin-top: 2rem; font-size: 0.875rem; color: $muted; font-family: $font-family-monospace; }
+
+// Map page -----------------------------------------------------------------
+.map-toolbar { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end; margin: 0.25rem 0 0.75rem; }
+.map-toolbar label { display: flex; flex-direction: column; gap: 0.25rem; flex: 1 1 150px; font-size: 0.875rem; color: $muted; }
+.map-toolbar select {
+  min-height: 44px; padding: 0.45rem 0.6rem; font-size: 1rem; color: $ink;
+  background: #FFFFFF; border: 1px solid var(--atlas-line); border-radius: 0.45rem;
+}
+.map-toolbar select:focus-visible, .map-toolbar input:focus-visible { outline: 3px solid $saffron; outline-offset: 1px; }
+.map-toolbar .check { flex: 0 0 auto; flex-direction: row; align-items: center; min-height: 44px; gap: 0.45rem; font-size: 1rem; color: $ink; }
+.map-toolbar .check input { width: 1.2rem; height: 1.2rem; accent-color: $lapis; }
+.leaflet-container { border-radius: 0.6rem; font-family: $font-family-sans-serif; background: #E9ECF2; }
+.map-panel { display: grid; gap: 0.75rem; margin: 0.75rem 0 1rem; }
+@media (min-width: 992px) { .map-panel { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); } }
+#atlas-legend, .stat { background: var(--atlas-card); border-radius: 0.6rem; padding: 0.85rem 1rem; }
+#atlas-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; }
+.stat { display: flex; flex-direction: column; gap: 0.1rem; }
+.stat-label { font-size: 0.875rem; color: $muted; }
+.stat-value { font-family: $font-family-monospace; font-weight: 600; font-size: 1.6rem; color: $night; }
+.legend-title { margin: 0 0 0.45rem; font-weight: 600; color: $night; }
+.legend-item { display: inline-flex; align-items: center; margin: 0 1rem 0.35rem 0; font-size: 0.875rem; transition: opacity 0.25s ease; }
+.legend-item.dim { opacity: 0.4; }
+.legend-ramp { height: 12px; border-radius: 6px; }
+.legend-scale { display: flex; justify-content: space-between; margin-top: 0.25rem; font-family: $font-family-monospace; font-size: 0.875rem; color: $muted; }
+.legend-note { margin: 0.45rem 0 0; font-size: 0.875rem; color: $muted; }
+.map-error { color: $night; font-weight: 600; }
+
+// Province explorer --------------------------------------------------------
+.kpi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin: 0.75rem 0 1.25rem; }
+@media (min-width: 768px) { .kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.kpi { display: flex; flex-direction: column; gap: 0.15rem; background: var(--atlas-card); border-radius: 0.6rem; padding: 1rem; }
+.kpi-label { font-size: 0.875rem; color: $muted; text-transform: uppercase; letter-spacing: 0.05em; }
+.kpi-value { font-family: $font-family-monospace; font-weight: 600; font-size: clamp(1.7rem, 5vw, 2.3rem); color: $night; line-height: 1.1; }
+.kpi-sub { font-size: 0.875rem; color: $muted; }
+form.oi-3a86ea-toggle, .observablehq select { font-size: 1rem; }
+
+// Tables -------------------------------------------------------------------
+.table { font-size: 0.95rem; }
+table.downloads td.num { font-family: $font-family-monospace; text-align: right; white-space: nowrap; }
+table.downloads .fmt { font-family: $font-family-monospace; font-size: 0.875rem; background: #E7EBF4; color: $night; padding: 0.1rem 0.4rem; border-radius: 4px; }
+.btn { min-height: 44px; display: inline-flex; align-items: center; margin: 0.25rem 0.5rem 0.25rem 0; }

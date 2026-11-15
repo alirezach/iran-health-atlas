@@ -1,0 +1,83 @@
+---
+title: "Iran Health Accessibility Atlas"
+subtitle: "How long is the drive from where people live to the nearest hospital?"
+description: "Share of Iran's population within 15, 30, 60 and 120 minutes of a hospital by car."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("dashboard/_common.R")
+```
+
+[اطلس دسترسی به بیمارستان در ایران]{.fa .atlas-fa lang="fa"}
+
+```{r}
+#| label: ribbon
+#| output: asis
+if (atlas_ready) cat(ribbon_html(atlas_summary)) else not_built()
+```
+
+## Who reaches a hospital in time
+
+```{r}
+#| label: ladder
+#| output: asis
+if (atlas_ready) cat(ladder_html(atlas_summary), facts_html(atlas_summary), sep = "")
+```
+
+## Coverage by province
+
+```{r}
+#| label: national-map
+#| eval: !expr atlas_ready
+library(mapgl)
+prov <- sf::st_read(file.path(web_dir, "province_metrics.geojson"), quiet = TRUE)
+ref <- atlas_summary$reference_threshold
+share_col <- paste0("share_within_", ref)
+prov$tooltip <- sprintf(
+  "<strong>%s</strong><br>%s of people within %g min<br>Median drive %s",
+  htmltools::htmlEscape(prov$province), fmt_pct(prov[[share_col]]), ref,
+  fmt_min(prov$median_travel_time_min)
+)
+leg <- atlas_summary$coverage_legend
+maplibre(style = carto_style("positron"), bounds = prov) |>
+  add_fill_layer(
+    id = "provinces",
+    source = prov,
+    fill_color = list("get", "fill"),
+    fill_opacity = 0.9,
+    fill_outline_color = "#FFFFFF",
+    tooltip = "tooltip",
+    hover_options = list(fill_opacity = 1)
+  ) |>
+  add_legend(
+    sprintf("People within %g min of a hospital", ref),
+    values = leg$label,
+    colors = leg$color,
+    type = "categorical",
+    position = "bottom-left"
+  )
+```
+
+[Open the interactive map](map.qmd){.btn .btn-primary} [Compare provinces](provinces.qmd){.btn .btn-outline-primary}
+
+## How the atlas works
+
+- **Where people live.** WorldPop 2020 population on a 1 km grid. Each cell is placed at its population-weighted centre, computed from 100 m data.
+- **Where hospitals are.** Every OpenStreetMap feature tagged `amenity=hospital` or `healthcare=hospital`, deduplicated and checked.
+- **How long the drive takes.** Free-flow car speeds on the OpenStreetMap road network, routed with dodgr to the nearest hospital.
+- **Rebuilt every month.** A scheduled workflow pulls the latest OSM extract, recomputes everything and publishes only when automated QA passes.
+
+[Full methodology](methodology.qmd) · [Data quality report](data/data-quality-report.html){target="_blank"}
+
+```{r}
+#| label: stamp
+#| output: asis
+if (atlas_ready) {
+  cat(sprintf(
+    '<p class="atlas-stamp">Built %s · OpenStreetMap extract md5 %s · WorldPop %s</p>',
+    atlas_summary$generated_at, substr(atlas_summary$osm_md5 %||% "unknown", 1, 12), atlas_summary$worldpop_year
+  ))
+}
+```

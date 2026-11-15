@@ -1,0 +1,50 @@
+---
+title: "Interactive map"
+subtitle: "Drive time from every populated square kilometre to the nearest hospital"
+page-layout: full
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("dashboard/_common.R")
+```
+
+```{r}
+#| label: toolbar
+#| output: asis
+if (atlas_ready) cat(map_toolbar_html(atlas_summary)) else not_built()
+```
+
+```{r}
+#| label: map
+#| eval: !expr atlas_ready
+library(leaflet)
+overlays <- jsonlite::read_json(file.path(web_dir, "overlays.json"))
+cats <- atlas_summary$categories
+cat_rows <- lapply(seq_len(nrow(cats)), function(i) as.list(cats[i, ]))
+js <- paste(readLines("assets/map.js", warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+m <- leaflet(
+  width = "100%", height = "72vh",
+  options = leafletOptions(preferCanvas = TRUE, zoomSnap = 0.5, minZoom = 4, maxZoom = 13)
+) |>
+  addProviderTiles(providers$CartoDB.Positron, options = providerTileOptions(detectRetina = TRUE)) |>
+  fitBounds(44, 25, 63.5, 39.8)
+htmlwidgets::onRender(m, js, data = list(
+  base = "data/",
+  overlays = overlays,
+  categories = cat_rows,
+  national = atlas_summary$national,
+  palette = list(travel = atlas_summary$palette_travel, population = atlas_summary$palette_population)
+))
+```
+
+```{r}
+#| label: panel
+#| output: asis
+if (atlas_ready) {
+  cat('<div class="map-panel"><div id="atlas-legend" aria-live="polite"></div><div id="atlas-stats" aria-live="polite"></div></div>')
+}
+```
+
+Tap a province to select it. **Accessibility categories** dims areas inside the chosen threshold so the places beyond it stand out. Raster layers are pre-rendered in Web Mercator (EPSG:3857); analysis is done in EPSG:4326.

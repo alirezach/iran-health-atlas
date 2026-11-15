@@ -1,0 +1,7 @@
+---
+title: "Methodology"
+toc: true
+toc-location: right
+---
+
+{{< include ../docs/methodology.md >}}

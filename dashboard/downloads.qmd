@@ -1,0 +1,49 @@
+---
+title: "Downloads"
+subtitle: "Every published dataset, with its licence"
+toc: true
+toc-location: right
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("dashboard/_common.R")
+```
+
+## Files
+
+```{r}
+#| label: manifest
+#| output: asis
+if (!atlas_ready) {
+  not_built()
+} else {
+  man <- fread(file.path(web_dir, "downloads-manifest.csv"), encoding = "UTF-8")
+  size <- ifelse(man$bytes >= 1e6, sprintf("%.1f MB", man$bytes / 1e6), sprintf("%.0f kB", man$bytes / 1e3))
+  rows <- sprintf(
+    '<tr><td><a href="%s" download>%s</a></td><td><span class="fmt">%s</span></td><td>%s</td><td>%s</td><td class="num">%s</td></tr>',
+    man$href, man$file, man$format, man$description, man$license, size
+  )
+  cat(
+    '<div class="table-responsive"><table class="table downloads"><thead><tr>',
+    "<th>File</th><th>Format</th><th>Contents</th><th>Licence</th><th>Size</th>",
+    "</tr></thead><tbody>", rows, "</tbody></table></div>",
+    sep = ""
+  )
+}
+```
+
+Versioned snapshots of every monthly build are attached to the [GitHub releases](https://github.com/alirezach/iran-health-atlas/releases).
+
+## Licences and attribution
+
+All files may be redistributed. Conditions come from the inputs:
+
+- **Derived from OpenStreetMap** (hospitals, travel times, every indicator): [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/). Credit "© OpenStreetMap contributors" and share adapted databases under the same licence.
+- **Population grid**: WorldPop (CC BY 4.0, doi:10.5258/SOTON/WP00670) and geoBoundaries (CC BY 4.0). Credit both.
+- **Code**: MIT.
+
+Suggested citation: *Chamanzar, A. (2026). Iran Health Accessibility Atlas (v1.0.0). https://alirezach.github.io/iran-health-atlas/*
+
+{{< include ../docs/data-dictionary.md >}}

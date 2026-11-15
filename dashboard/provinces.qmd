@@ -1,0 +1,161 @@
+---
+title: "Province explorer"
+subtitle: "Coverage, drive times and rankings for Iran's provinces"
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("dashboard/_common.R")
+pm <- if (atlas_ready) fread(file.path(web_dir, "downloads", "province_metrics.csv"), encoding = "UTF-8") else data.table()
+dist <- if (atlas_ready) fread(file.path(web_dir, "downloads", "province_travel_time_distribution.csv"), encoding = "UTF-8") else data.table()
+thr <- if (atlas_ready) atlas_summary$thresholds else c(15, 30, 60, 120)
+ref <- if (atlas_ready) atlas_summary$reference_threshold else 60
+cats <- atlas_summary$categories
+```
+
+```{r}
+#| label: ojs-data
+#| echo: false
+ojs_define(
+  ready = atlas_ready,
+  provinces = pm,
+  dists = dist,
+  thresholds = thr,
+  ref = ref,
+  palette = if (atlas_ready) cats$color else character()
+)
+```
+
+```{r}
+#| label: no-data
+#| output: asis
+if (!atlas_ready) not_built()
+```
+
+## Pick a province
+
+```{ojs}
+//| echo: false
+prov = ready ? transpose(provinces) : []
+dist = ready ? transpose(dists) : []
+defaultProv = prov.some(d => d.province === "Tehran") ? "Tehran" : (prov[0] || {}).province
+viewof province = Inputs.select(prov.map(d => d.province).sort(), {label: "Province", value: defaultProv})
+viewof threshold = Inputs.radio(thresholds, {label: "Threshold (minutes)", value: ref})
+```
+
+```{ojs}
+//| echo: false
+sel = prov.find(d => d.province === province)
+fmtPct = x => (x === null || x === undefined) ? "-" : `${Math.round(100 * x)}%`
+fmtMin = x => (x === null || x === undefined) ? "-" : `${Math.round(x)} min`
+fmtNum = x => (x === null || x === undefined) ? "-" : Math.round(x).toLocaleString("en-US")
+ready && sel ? html`<div class="kpi-grid">
+  <div class="kpi"><span class="kpi-label">Within ${threshold} min</span><span class="kpi-value">${fmtPct(sel["share_within_" + threshold])}</span><span class="kpi-sub">${fmtNum(sel["pop_within_" + threshold])} of ${fmtNum(sel.population)} people</span></div>
+  <div class="kpi"><span class="kpi-label">Mean drive</span><span class="kpi-value">${fmtMin(sel.mean_travel_time_min)}</span><span class="kpi-sub">median ${fmtMin(sel.median_travel_time_min)}</span></div>
+  <div class="kpi"><span class="kpi-label">Hospitals mapped</span><span class="kpi-value">${fmtNum(sel.n_hospitals)}</span><span class="kpi-sub">${(sel.hospitals_per_100k ?? 0).toFixed(1)} per 100k people</span></div>
+  <div class="kpi"><span class="kpi-label">Rank at ${ref} min</span><span class="kpi-value">${sel.rank_coverage} / ${prov.length}</span><span class="kpi-sub">1 = best coverage</span></div>
+</div>` : html``
+```
+
+```{ojs}
+//| echo: false
+colorFor = m => { const i = thresholds.findIndex(t => m < t); return palette[i === -1 ? thresholds.length : i]; }
+ready ? Plot.plot({
+  height: 280,
+  marginLeft: 60,
+  style: {fontFamily: "IBM Plex Sans, sans-serif", fontSize: "14px", background: "transparent"},
+  color: {type: "identity"},
+  x: {label: "Drive time to nearest hospital (minutes) →", domain: [0, 190]},
+  y: {label: "↑ People", grid: true, tickFormat: "s"},
+  marks: [
+    Plot.rectY(dist.filter(d => d.province === province), {
+      x1: "bin_start", x2: d => d.bin_end ?? 190, y: "population",
+      fill: d => colorFor(d.bin_start), inset: 1
+    }),
+    Plot.ruleX([threshold], {stroke: "#13204A", strokeWidth: 2, strokeDasharray: "4,3"}),
+    Plot.ruleY([0])
+  ]
+}) : html``
+```
+
+## Province ranking
+
+Share of each province's population within the selected drive time. Switch thresholds with the buttons.
+
+```{r}
+#| label: ranking
+#| eval: !expr atlas_ready
+library(plotly)
+thr_cols <- paste0("share_within_", thr)
+rk <- copy(pm)
+setorderv(rk, paste0("share_within_", ref))
+p <- plot_ly(height = 24 * nrow(rk) + 140)
+for (i in seq_along(thr)) {
+  p <- add_bars(
+    p,
+    x = round(100 * rk[[thr_cols[i]]], 1), y = rk$province, orientation = "h",
+    name = paste(thr[i], "min"), visible = thr[i] == ref,
+    marker = list(color = "#1F3A93"),
+    hovertemplate = paste0("%{y}<br>%{x:.0f}% within ", thr[i], " min<extra></extra>")
+  )
+}
+buttons <- lapply(seq_along(thr), function(i) {
+  list(method = "restyle", args = list("visible", as.list(seq_along(thr) == i)), label = paste(thr[i], "min"))
+})
+p |>
+  layout(
+    updatemenus = list(list(
+      type = "buttons", direction = "right", x = 0, y = 1, xanchor = "left", yanchor = "bottom",
+      showactive = TRUE, active = which(thr == ref) - 1, buttons = buttons
+    )),
+    xaxis = list(title = "Population within threshold", range = c(0, 100), ticksuffix = "%", fixedrange = TRUE),
+    yaxis = list(title = "", categoryorder = "array", categoryarray = rk$province, fixedrange = TRUE, automargin = TRUE),
+    margin = list(l = 8, r = 8, t = 56, b = 48),
+    font = list(family = "IBM Plex Sans, sans-serif", size = 14, color = "#1B2233"),
+    paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)",
+    showlegend = FALSE, bargap = 0.25
+  ) |>
+  config(displayModeBar = FALSE, responsive = TRUE)
+```
+
+## How each province's population splits by drive time
+
+```{r}
+#| label: distribution
+#| eval: !expr atlas_ready
+library(echarts4r)
+labs <- cats$label
+bands <- data.frame(province = rk$province)
+prev <- 0
+for (i in seq_along(thr)) {
+  cur <- rk[[thr_cols[i]]]
+  bands[[labs[i]]] <- round(100 * (cur - prev), 1)
+  prev <- cur
+}
+bands[[labs[length(thr) + 1]]] <- round(100 * (rk$population_reachable / rk$population - prev), 1)
+bands[[labs[length(thr) + 2]]] <- round(100 * rk$population_unreachable / rk$population, 1)
+ch <- bands |> e_charts(province, height = 24 * nrow(bands) + 160)
+for (s in labs) ch <- e_bar_(ch, s, stack = "share")
+ch |>
+  e_flip_coords() |>
+  e_color(cats$color) |>
+  e_x_axis(max = 100, axisLabel = list(formatter = "{value}%")) |>
+  e_grid(left = 8, right = 16, top = 16, bottom = 72, containLabel = TRUE) |>
+  e_legend(bottom = 0, type = "scroll") |>
+  e_tooltip(trigger = "axis", axisPointer = list(type = "shadow")) |>
+  e_text_style(fontFamily = "IBM Plex Sans")
+```
+
+## All provinces
+
+```{r}
+#| label: table
+#| eval: !expr atlas_ready
+tab <- data.frame(Rank = pm$rank_coverage, Province = pm$province, Population = fmt_int(pm$population))
+for (t in thr) tab[[paste0("\u2264 ", t, " min")]] <- fmt_pct(pm[[paste0("share_within_", t)]])
+tab[["Mean"]] <- fmt_min(pm$mean_travel_time_min)
+tab[["Median"]] <- fmt_min(pm$median_travel_time_min)
+tab[["Hospitals"]] <- pm$n_hospitals
+knitr::kable(tab[order(tab$Rank), ], row.names = FALSE, align = c("r", "l", rep("r", ncol(tab) - 2)))
+```

@@ -1,0 +1,56 @@
+project:
+  type: website
+  output-dir: _site
+  execute-dir: project
+  render:
+    - dashboard/index.qmd
+    - dashboard/map.qmd
+    - dashboard/provinces.qmd
+    - dashboard/methodology.qmd
+    - dashboard/downloads.qmd
+  resources:
+    - dashboard/data/**
+  post-render: assets/post-render.R
+
+website:
+  title: "Iran Health Accessibility Atlas"
+  description: "Drive time to the nearest hospital for every populated square kilometre of Iran."
+  site-url: "https://alirezach.github.io/iran-health-atlas/"
+  repo-url: "https://github.com/alirezach/iran-health-atlas"
+  repo-actions: [issue, source]
+  favicon: assets/favicon.svg
+  open-graph: true
+  search: true
+  navbar:
+    left:
+      - href: dashboard/index.qmd
+        text: Overview
+      - href: dashboard/map.qmd
+        text: Map
+      - href: dashboard/provinces.qmd
+        text: Provinces
+      - href: dashboard/methodology.qmd
+        text: Methodology
+      - href: dashboard/downloads.qmd
+        text: Downloads
+    right:
+      - icon: github
+        href: "https://github.com/alirezach/iran-health-atlas"
+        aria-label: "GitHub repository"
+  page-footer:
+    left: "Data: © OpenStreetMap contributors (ODbL) · WorldPop (CC BY 4.0) · geoBoundaries (CC BY 4.0)"
+    right: "Code: MIT · v1.0.0"
+
+format:
+  html:
+    theme: [cosmo, assets/atlas.scss]
+    toc: false
+    lang: en
+    smooth-scroll: true
+    link-external-newwindow: true
+    fig-responsive: true
+
+execute:
+  echo: false
+  warning: false
+  message: false
