@@ -1,0 +1,3 @@
+# Internal pipeline helpers; the package exposes no public API.
+# Functions are used by _targets.R (via tar_source) and by the test suite.
+import(data.table)

@@ -1,0 +1,41 @@
+Package: iranhealthatlas
+Type: Package
+Title: Iran Health Accessibility Atlas
+Version: 1.0.0
+Authors@R:
+    person("Alireza", "Chamanzar", , "alirezach70@gmail.com", role = c("aut", "cre"))
+Description: A reproducible pipeline that estimates car travel time from
+    every populated 1 km grid cell in Iran to the nearest hospital, using
+    OpenStreetMap roads and hospitals, WorldPop population estimates and
+    geoBoundaries administrative units. Results are summarised by province,
+    county and nationally, validated automatically and published as a Quarto
+    website.
+License: file LICENSE
+URL: https://github.com/alirezach/iran-health-atlas,
+    https://alirezach.github.io/iran-health-atlas/
+BugReports: https://github.com/alirezach/iran-health-atlas/issues
+Encoding: UTF-8
+Depends:
+    R (>= 4.3.0)
+Imports:
+    arrow,
+    data.table (>= 1.15.0),
+    dodgr,
+    exactextractr,
+    grDevices,
+    htmltools,
+    jsonlite,
+    png,
+    sf (>= 1.0-16),
+    terra (>= 1.7-78),
+    tools,
+    utils,
+    yaml
+Suggests:
+    osmextract (>= 0.5.0),
+    targets (>= 1.7.0),
+    tidyselect,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Config/Needs/website: knitr, rmarkdown, leaflet, mapgl, plotly, echarts4r,
+    htmlwidgets

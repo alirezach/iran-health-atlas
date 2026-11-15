@@ -1,0 +1,68 @@
+# Iran Health Accessibility Atlas: pipeline configuration.
+# Every analytical choice lives here so it can be reviewed in one place.
+# Changing this file invalidates the affected targets automatically.
+default:
+  project:
+    name: "Iran Health Accessibility Atlas"
+    version: "1.0.0"
+
+  paths:
+    raw: "data-raw"
+    intermediate: "data-intermediate"
+    processed: "data-processed"
+    web: "dashboard/data"
+
+  sources:
+    osm_pbf_url: "https://download.geofabrik.de/asia/iran-latest.osm.pbf"
+    osm_md5_url: "https://download.geofabrik.de/asia/iran-latest.osm.pbf.md5"
+    worldpop_year: 2020
+    # Unconstrained, UN-adjusted, 30 arc-second (~1 km) population counts
+    worldpop_1km_url: "https://data.worldpop.org/GIS/Population/Global_2000_2020_1km_UNadj/2020/IRN/irn_ppp_2020_1km_Aggregated_UNadj.tif"
+    # 3 arc-second (~100 m) counts, used only to place population-weighted centroids
+    worldpop_100m_url: "https://data.worldpop.org/GIS/Population/Global_2000_2020/2020/IRN/irn_ppp_2020_UNadj.tif"
+    boundaries_api: "https://www.geoboundaries.org/api/current/gbOpen/IRN/{level}/"
+
+  population:
+    min_population: 0          # cells with population <= this value are dropped
+    weighted_centroids: true   # use the 100 m raster for population-weighted centroids
+
+  hospitals:
+    dedup_distance_m: 150      # candidates closer than this are one facility
+
+  routing:
+    engine: "dodgr"            # "dodgr" (v1 default) or "r5r" (experimental)
+    connector_speed_kmh: 15    # off-network speed between a point and its nearest road vertex
+    hospital_chunk_size: 50    # hospitals routed per batch (memory vs speed)
+    min_component_edges: 500   # drop road fragments smaller than this
+    # Free-flow car speeds by OSM highway class (km/h). Classes not listed are
+    # excluded from the network; residential streets are left out in v1 to keep
+    # the national graph within GitHub runner memory (see methodology).
+    speeds_kmh:
+      motorway: 100
+      motorway_link: 60
+      trunk: 85
+      trunk_link: 50
+      primary: 70
+      primary_link: 45
+      secondary: 60
+      secondary_link: 40
+      tertiary: 50
+      tertiary_link: 35
+      unclassified: 40
+      road: 30
+
+  thresholds_min: [15, 30, 60, 120]
+
+  web:
+    raster_factor: 1             # aggregate the 1 km grid by this factor for PNG overlays
+    simplify_tolerance_m: 750    # polygon simplification for GeoJSON
+    coordinate_precision: 4      # decimal places in GeoJSON (~11 m)
+    min_population_display: 1    # hide near-empty cells from web layers
+
+  qa:
+    stop_on_fail: true
+    duplicate_distance_m: 100
+    max_travel_time_min: 1440
+    max_plausible_speed_kmh: 130
+    max_hospital_snap_m: 2000
+    population_tolerance: 0.02
