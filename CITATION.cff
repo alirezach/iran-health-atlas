@@ -1,0 +1,46 @@
+cff-version: 1.2.0
+message: "If you use this atlas or its data, please cite it as below."
+title: "Iran Health Accessibility Atlas"
+version: 1.0.0
+date-released: 2026-11-15
+abstract: >-
+  An open, reproducible observatory of car travel time from every populated
+  1 km cell in Iran to the nearest hospital, built from OpenStreetMap,
+  WorldPop and geoBoundaries with R, targets and Quarto.
+authors:
+  - family-names: Chamanzar
+    given-names: Alireza
+    email: alirezach70@gmail.com
+repository-code: "https://github.com/alirezach/iran-health-atlas"
+url: "https://alirezach.github.io/iran-health-atlas/"
+license: MIT
+keywords:
+  - accessibility
+  - health
+  - hospitals
+  - Iran
+  - GIS
+  - OpenStreetMap
+  - WorldPop
+  - R
+  - Quarto
+references:
+  - type: data
+    title: "OpenStreetMap"
+    authors:
+      - name: "OpenStreetMap contributors"
+    url: "https://www.openstreetmap.org"
+    license: ODbL-1.0
+  - type: data
+    title: "WorldPop Global 1km Population, Individual countries, UN adjusted (2020)"
+    authors:
+      - name: "WorldPop"
+    doi: 10.5258/SOTON/WP00670
+    license: CC-BY-4.0
+  - type: data
+    title: "geoBoundaries: Global Database of Political Administrative Boundaries"
+    authors:
+      - family-names: Runfola
+        given-names: Daniel
+    url: "https://www.geoboundaries.org"
+    license: CC-BY-4.0

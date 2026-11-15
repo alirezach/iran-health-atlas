@@ -7,12 +7,13 @@ test_that("graph_components groups transitive neighbours", {
 
 test_that("layers are standardised with stable OSM ids", {
   pts <- sf::st_sf(
-    osm_id = "42", name = "Sina", amenity = "hospital", `name:fa` = "سینا",
-    geometry = sf::st_sfc(pt(51.4, 35.7), crs = 4326), check.names = FALSE
+    osm_id = "42", name = "Sina", amenity = "hospital", name_fa = "\u0633\u06cc\u0646\u0627",
+    geometry = sf::st_sfc(pt(51.4, 35.7), crs = 4326)
   )
+  names(pts)[names(pts) == "name_fa"] <- "name:fa"
   out <- standardise_hospital_layer(pts, "point")
   expect_equal(out$osm_id, "node/42")
-  expect_equal(out$name_fa, "سینا")
+  expect_equal(out$name_fa, "\u0633\u06cc\u0646\u0627")
   expect_true(all(hospital_fields %in% names(out)))
   expect_true(is.na(out$beds))
 })
