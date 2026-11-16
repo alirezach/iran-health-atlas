@@ -28,7 +28,10 @@ list(
   tar_target(cfg, atlas_config(config_file)),
 
   # 01 Download --------------------------------------------------------------
-  tar_target(osm_version, osm_remote_version(cfg), cue = tar_cue(mode = "always")),
+  tar_target(
+    osm_version, osm_remote_version(cfg),
+    cue = tar_cue(mode = if (identical(Sys.getenv("ATLAS_FROZEN_INPUTS"), "true")) "never" else "always")
+  ),
   tar_target(osm_pbf, download_osm(cfg, osm_version), format = "file"),
   tar_target(worldpop_1km, download_worldpop(cfg, "1km"), format = "file"),
   tar_target(worldpop_100m, download_worldpop(cfg, "100m"), format = "file"),
@@ -56,7 +59,18 @@ list(
   tar_target(road_graph_file, build_network_stage(osm_pbf, cfg), format = "file"),
 
   # 05 Accessibility ---------------------------------------------------------
-  tar_target(travel_times, accessibility_stage(road_graph_file, population_grid, hospitals, cfg)),
+  tar_target(
+    routing_snapshot,
+    prepare_routing_snapshot(road_graph_file, population_grid, hospitals, cfg),
+    format = "file"
+  ),
+  tar_target(province_ids, province_plan(population_grid)$province_id, iteration = "vector"),
+  tar_target(
+    province_result_files,
+    accessibility_province_stage(province_ids, routing_snapshot),
+    pattern = map(province_ids), format = "file"
+  ),
+  tar_target(travel_times, combine_province_results(province_result_files, population_grid, routing_snapshot)),
   tar_target(travel_times_file, write_travel_times(travel_times, cfg), format = "file"),
 
   # 06 Indicators ------------------------------------------------------------

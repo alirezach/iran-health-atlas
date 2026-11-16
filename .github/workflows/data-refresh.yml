@@ -2,8 +2,15 @@ name: Data refresh
 
 on:
   schedule:
-    - cron: "0 2 3 * *"   # 02:00 UTC on the 3rd of every month
+    - cron: "0 2 3 * *"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "pilot: smallest province, no national publication; full: every province sequentially"
+        type: choice
+        options: [pilot, full]
+        default: pilot
+        required: true
   push:
     branches: [main]
     paths:
@@ -16,24 +23,27 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: data-refresh
   cancel-in-progress: false
 
+env:
+  GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+  GH_TOKEN: ${{ github.token }}
+
 jobs:
-  pipeline:
-    name: Rebuild data (latest OSM)
+  prepare:
+    name: Prepare one immutable national snapshot
     runs-on: ubuntu-latest
-    timeout-minutes: 350
-    env:
-      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
-      GH_TOKEN: ${{ github.token }}
+    timeout-minutes: 90
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      snapshot: ${{ steps.plan.outputs.snapshot }}
+      mode: ${{ steps.plan.outputs.mode }}
+      artifact_attempt: ${{ steps.plan.outputs.artifact_attempt }}
     steps:
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
-          df -h /
       - uses: actions/checkout@v4
       - uses: r-lib/actions/setup-r@v2
         with:
@@ -42,7 +52,7 @@ jobs:
         with:
           needs: website
           extra-packages: any::renv
-      - name: Restore targets and downloaded inputs
+      - name: Restore prepared inputs from earlier runs
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -50,14 +60,17 @@ jobs:
             data-raw
             data-intermediate
             data-processed
-            dashboard/data
-          key: atlas-${{ runner.os }}-v1-${{ hashFiles('DESCRIPTION', 'renv.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: atlas-${{ runner.os }}-v1-${{ hashFiles('DESCRIPTION', 'renv.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}-inputs
           restore-keys: |
             atlas-${{ runner.os }}-v1-${{ hashFiles('DESCRIPTION', 'renv.lock') }}-
-      - name: Prepare inputs and checkpoint before national routing
+      - name: Prepare snapshot and province plan
+        id: plan
+        env:
+          ATLAS_MODE: ${{ github.event_name == 'schedule' && 'full' || inputs.mode || 'pilot' }}
         run: |
-          Rscript -e 'targets::tar_make(names = c(population_grid_file, hospitals_file, road_graph_file, zonal, source_metadata), reporter = "verbose")'
-      - name: Save pre-routing checkpoint
+          Rscript scripts/05_accessibility.R prepare
+          echo "artifact_attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - name: Preserve upstream work for future runs
         uses: actions/cache/save@v4
         with:
           path: |
@@ -65,53 +78,164 @@ jobs:
             data-raw
             data-intermediate
             data-processed
-            dashboard/data
-          key: atlas-${{ runner.os }}-v1-${{ hashFiles('DESCRIPTION', 'renv.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}-prepared
-      - name: Run remaining targets with resource diagnostics
+          key: atlas-${{ runner.os }}-v1-${{ hashFiles('DESCRIPTION', 'renv.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}-inputs
+      - name: Upload shared routing inputs (not just a cache)
+        uses: actions/upload-artifact@v4
+        with:
+          name: routing-inputs-${{ github.run_attempt }}
+          path: _atlas_inputs/${{ steps.plan.outputs.snapshot }}/
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 1
+      - name: Package upstream targets for national assembly
+        if: steps.plan.outputs.mode == 'full'
+        run: |
+          tar -czf prepared-targets.tar.gz --exclude='data-processed/provinces' _targets data-raw data-intermediate data-processed
+      - name: Upload national assembly state
+        if: steps.plan.outputs.mode == 'full'
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepared-targets-${{ github.run_attempt }}
+          path: prepared-targets.tar.gz
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+
+  province:
+    name: Province ${{ matrix.province }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      max-parallel: 1
+      fail-fast: true
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    env:
+      ATLAS_PROVINCE_ID: ${{ matrix.province_id }}
+      ATLAS_SNAPSHOT: ${{ needs.prepare.outputs.snapshot }}
+      ATLAS_PROVINCE_KEY: ${{ matrix.key }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          needs: website
+          extra-packages: any::renv
+      - name: Download the exact prepared routing snapshot
+        uses: actions/download-artifact@v4
+        with:
+          name: routing-inputs-${{ needs.prepare.outputs.artifact_attempt }}
+          path: _atlas_inputs/${{ needs.prepare.outputs.snapshot }}
+      - name: Restore this province only if inputs and code match
+        id: previous
+        uses: actions/cache/restore@v4
+        with:
+          path: data-processed/provinces/${{ needs.prepare.outputs.snapshot }}/${{ matrix.key }}
+          key: province-v1-${{ needs.prepare.outputs.snapshot }}-${{ matrix.key }}
+      - name: Recover a matching artifact if the cache was evicted
+        if: steps.previous.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PREFIX="province-${ATLAS_SNAPSHOT}-${ATLAS_PROVINCE_KEY}-"
+          ARTIFACT_ID=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+            --jq ".artifacts[] | select(.expired == false) | select(.name | startswith(\"$PREFIX\")) | .id" \
+            | sort -nr | awk 'NR == 1 {print}')
+          if [ -n "$ARTIFACT_ID" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > "$RUNNER_TEMP/province.zip"
+            mkdir -p data-processed/provinces
+            unzip -q "$RUNNER_TEMP/province.zip" -d data-processed/provinces
+            echo "Recovered province artifact; the R step will verify all checksums."
+          fi
+      - name: Route or verify the completed province
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p diagnostics
           (
             while true; do
-              date -u
+              echo "RESOURCE $(date -u +%FT%TZ) province=$ATLAS_PROVINCE_ID"
               free -m
               df -h /
               ps -eo pid,ppid,rss,%cpu,comm --sort=-rss | head -n 12 || true
               sleep 60
             done
-          ) > diagnostics/resources.log 2>&1 &
+          ) > >(tee diagnostics/resources.log) 2>&1 &
           MONITOR_PID=$!
           trap 'kill "$MONITOR_PID" 2>/dev/null || true' EXIT
-          /usr/bin/time -v Rscript -e 'targets::tar_make(reporter = "verbose")' 2>&1 | tee diagnostics/pipeline.log
-      - name: Save completed targets
+          /usr/bin/time -v Rscript scripts/05_accessibility.R province 2>&1 | tee diagnostics/pipeline.log
+      - name: Save a verified province checkpoint for resuming
+        if: steps.previous.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: |
-            _targets
-            data-raw
-            data-intermediate
-            data-processed
-            dashboard/data
-          key: atlas-${{ runner.os }}-v1-${{ hashFiles('DESCRIPTION', 'renv.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}-complete
-      - name: Package the data release
+          path: data-processed/provinces/${{ needs.prepare.outputs.snapshot }}/${{ matrix.key }}
+          key: province-v1-${{ needs.prepare.outputs.snapshot }}-${{ matrix.key }}
+      - name: Upload completed province before the next province starts
+        uses: actions/upload-artifact@v4
+        with:
+          name: province-${{ needs.prepare.outputs.snapshot }}-${{ matrix.key }}-${{ github.run_attempt }}
+          path: data-processed/provinces/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Save province diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-${{ matrix.key }}-${{ github.run_attempt }}
+          path: diagnostics/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  finalize:
+    name: Merge all provinces, validate and release
+    needs: [prepare, province]
+    if: needs.prepare.outputs.mode == 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          needs: website
+          extra-packages: any::renv
+      - uses: actions/download-artifact@v4
+        with:
+          name: prepared-targets-${{ needs.prepare.outputs.artifact_attempt }}
+      - name: Restore upstream targets
+        run: tar -xzf prepared-targets.tar.gz
+      - uses: actions/download-artifact@v4
+        with:
+          name: routing-inputs-${{ needs.prepare.outputs.artifact_attempt }}
+          path: _atlas_inputs/${{ needs.prepare.outputs.snapshot }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: province-${{ needs.prepare.outputs.snapshot }}-*
+          merge-multiple: true
+          path: data-processed/provinces/
+      - name: Validate complete coverage and run national outputs
+        run: Rscript scripts/05_accessibility.R finalize
+      - name: Package the validated data release
         id: pkg
         run: |
           echo "tag=data-$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
           tar -czf atlas-data.tar.gz data-processed dashboard/data
-          ls -lh atlas-data.tar.gz data-processed
       - name: Publish GitHub release
         run: |
           TAG="${{ steps.pkg.outputs.tag }}"
           MD5=$(jq -r '.osm_md5 // "unknown"' dashboard/data/site-summary.json)
-          NOTES="Automated build of the Iran Health Accessibility Atlas. OpenStreetMap extract md5: ${MD5}. QA results: data-quality-report.html. Licences: OSM-derived data ODbL 1.0; WorldPop and geoBoundaries CC BY 4.0."
+          NOTES="Validated national build, all provinces. Snapshot: ${{ needs.prepare.outputs.snapshot }}. OSM md5: ${MD5}. See data-quality-report.html. OSM-derived data: ODbL 1.0; WorldPop and geoBoundaries: CC BY 4.0."
           ASSETS="atlas-data.tar.gz data-processed/*.parquet data-processed/*.csv data-processed/*.csv.gz data-processed/data-quality-report.html"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" $ASSETS --clobber
           else
             gh release create "$TAG" $ASSETS --title "Atlas data $TAG" --notes "$NOTES" --latest
           fi
-      - name: Record exact package versions in renv.lock
+      - name: Record exact package versions
         run: |
           Rscript -e 'renv::snapshot(library = .libPaths(), prompt = FALSE, force = TRUE)'
           if ! git diff --quiet -- renv.lock; then
@@ -121,20 +245,17 @@ jobs:
             git commit -m "chore: refresh renv.lock from data build [skip ci]"
             git push
           fi
-      - name: Upload diagnostics and QA report
+      - name: Upload national QA report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pipeline-diagnostics
-          path: |
-            diagnostics/
-            data-processed/data-quality-report.html
-            _targets/meta/
+          name: national-qa-${{ github.run_attempt }}
+          path: data-processed/data-quality-report.html
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 90
 
   deploy:
-    needs: pipeline
+    needs: finalize
     permissions:
       contents: read
       pages: write

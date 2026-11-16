@@ -59,3 +59,84 @@ test_that("off-network connectors add time at the connector speed", {
   expect_equal(res$origin_snap_m, conn_m, tolerance = 1e-6)
   expect_equal(res$travel_time_min, (leg_m / (60 / 3.6) + conn_m / (15 / 3.6)) / 60, tolerance = 1e-6)
 })
+
+
+province_fixture <- function() {
+  grid <- data.table::data.table(
+    cell_id = 1:3, lon = c(50.0, 50.2, 50.2), lat = c(30.0, 30.0, 30.1),
+    population = c(100, 200, 300), province_id = c("west", "east", "east"),
+    province = c("West", "East", "East"), county_id = c("W1", "E1", "E1"), county = c("W", "E", "E")
+  )
+  hospitals <- data.frame(hospital_id = "border-hospital", lon = 50.1, lat = 30.0, province_id = "east")
+  cfg <- list(routing = list(engine = "dodgr", hospital_chunk_size = 1L, connector_speed_kmh = 15),
+              thresholds_min = c(15, 30, 60, 120), paths = list(raw = tempdir(), processed = tempdir()))
+  list(grid = grid, hospitals = hospitals, cfg = cfg, graph = build_road_graph(road_lines(), speeds))
+}
+
+province_test_bundles <- function(f) {
+  lapply(c("west", "east"), function(id) {
+    list(snapshot_id = "test-snapshot", province_id = id,
+         rows = route_province(f$graph, f$grid, f$hospitals, f$cfg, id))
+  })
+}
+
+test_that("province plan is complete and picks the smallest province for the pilot", {
+  f <- province_fixture()
+  plan <- province_plan(f$grid)
+  expect_equal(plan$province_id, c("west", "east"))
+  expect_equal(plan$n_cells, c(1L, 2L))
+  expect_true(all(grepl("^[a-f0-9]{32}$", plan$key)))
+  bad <- data.table::copy(f$grid)
+  bad$province_id[1] <- NA_character_
+  expect_error(province_plan(bad), "province_id")
+  bad <- data.table::rbindlist(list(f$grid, f$grid[1]))
+  expect_error(province_plan(bad), "Duplicate")
+})
+
+test_that("provincial routes equal national routes and preserve cross-border hospitals", {
+  f <- province_fixture()
+  parts <- province_test_bundles(f)
+  combined <- combine_province_bundles(parts, f$grid, "test-snapshot")
+  national <- route_nearest("dodgr", graph = f$graph,
+                            origins = f$grid[, list(cell_id, lon, lat)], hospitals = f$hospitals,
+                            chunk_size = 1L, connector_speed_kmh = 15)
+  expect_equal(combined$cell_id, national$cell_id)
+  expect_equal(combined$travel_time_min, national$travel_time_min, tolerance = 1e-6)
+  expect_equal(combined$distance_km, national$distance_km, tolerance = 1e-6)
+  expect_equal(combined$nearest_hospital, national$nearest_hospital)
+  expect_equal(combined$nearest_hospital[1], "border-hospital")
+  expect_true(is.na(combined$travel_time_min[3]))
+  expect_equal(sum(combined$population), sum(f$grid$population))
+  expect_equal(attr(combined, "hospital_snap"), attr(national, "hospital_snap"))
+})
+
+test_that("national merge rejects partial, duplicate and stale provincial results", {
+  f <- province_fixture()
+  parts <- province_test_bundles(f)
+  expect_error(combine_province_bundles(parts[1], f$grid, "test-snapshot"), "every province")
+  expect_error(combine_province_bundles(c(parts, parts[1]), f$grid, "test-snapshot"), "every province")
+  stale <- parts
+  stale[[1]]$snapshot_id <- "other-inputs"
+  expect_error(combine_province_bundles(stale, f$grid, "test-snapshot"), "Stale")
+  missing <- parts
+  missing[[2]]$rows <- missing[[2]]$rows[1]
+  expect_error(combine_province_bundles(missing, f$grid, "test-snapshot"), "coverage")
+})
+
+test_that("completed provincial files survive a round trip and tampering is rejected", {
+  f <- province_fixture()
+  f$cfg$paths$processed <- tempfile("province-output-")
+  on.exit(unlink(f$cfg$paths$processed, recursive = TRUE))
+  m <- list(snapshot_id = "test-snapshot", provinces = province_plan(f$grid))
+  rows <- route_province(f$graph, f$grid, f$hospitals, f$cfg, "west")
+  paths <- write_province_bundle(rows, f$grid, "west", m, f$cfg)
+  expect_true(all(file.exists(paths)))
+  b <- read_province_bundle(dirname(paths[1]), f$grid, "west", m$snapshot_id)
+  expect_equal(b$rows$cell_id, rows$cell_id)
+  expect_equal(b$rows$travel_time_min, rows$travel_time_min)
+  expect_error(write_province_bundle(rows, f$grid, "west", m, f$cfg), "overwrite")
+  b$rows$population[1] <- b$rows$population[1] + 1
+  expect_error(validate_province_bundle(b, f$grid, "west", m$snapshot_id), "population mismatch")
+  cat("damaged", file = paths[2])
+  expect_error(read_province_bundle(dirname(paths[1]), f$grid, "west", m$snapshot_id), "checksum")
+})
