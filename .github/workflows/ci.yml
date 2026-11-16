@@ -1,6 +1,8 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -47,14 +49,15 @@ jobs:
         with:
           extra-packages: any::lintr
           dependencies: '"hard"'
-      - name: Lint R and Quarto code
+      - name: Lint R source files
         shell: Rscript {0}
         run: |
-          lints <- lintr::lint_dir(".")
+          # lintr treats Observable JavaScript chunks in .qmd as R.
+          # Check R sources here; the separate Quarto job checks the website.
+          lints <- lintr::lint_dir(".", pattern = "[.][Rr]$")
           print(lints)
           types <- vapply(lints, function(l) l$type, character(1))
           message(sprintf("%d lints (%d errors)", length(lints), sum(types == "error")))
-          # Style lints are reported as annotations; syntax errors fail the job.
           if (any(types == "error")) quit(status = 1)
 
   tests:
@@ -73,3 +76,21 @@ jobs:
       - name: Run unit tests
         shell: Rscript {0}
         run: testthat::test_local(reporter = "progress", stop_on_failure = TRUE)
+
+  quarto:
+    name: Quarto smoke render (without national data)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: quarto-dev/quarto-actions/setup@v2
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          needs: website
+      - name: Render all Quarto pages with their native engines
+        run: quarto render

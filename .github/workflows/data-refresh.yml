@@ -42,8 +42,58 @@ jobs:
         with:
           needs: website
           extra-packages: any::renv
-      - name: Run the targets pipeline from scratch
-        run: Rscript -e 'targets::tar_make()'
+      - name: Restore targets and downloaded inputs
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            _targets
+            data-raw
+            data-intermediate
+            data-processed
+            dashboard/data
+          key: atlas-${{ runner.os }}-v1-${{ hashFiles('DESCRIPTION', 'renv.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            atlas-${{ runner.os }}-v1-${{ hashFiles('DESCRIPTION', 'renv.lock') }}-
+      - name: Prepare inputs and checkpoint before national routing
+        run: |
+          Rscript -e 'targets::tar_make(names = c(population_grid_file, hospitals_file, road_graph_file, zonal, source_metadata), reporter = "verbose")'
+      - name: Save pre-routing checkpoint
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            _targets
+            data-raw
+            data-intermediate
+            data-processed
+            dashboard/data
+          key: atlas-${{ runner.os }}-v1-${{ hashFiles('DESCRIPTION', 'renv.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}-prepared
+      - name: Run remaining targets with resource diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          (
+            while true; do
+              date -u
+              free -m
+              df -h /
+              ps -eo pid,ppid,rss,%cpu,comm --sort=-rss | head -n 12 || true
+              sleep 60
+            done
+          ) > diagnostics/resources.log 2>&1 &
+          MONITOR_PID=$!
+          trap 'kill "$MONITOR_PID" 2>/dev/null || true' EXIT
+          /usr/bin/time -v Rscript -e 'targets::tar_make(reporter = "verbose")' 2>&1 | tee diagnostics/pipeline.log
+      - name: Save completed targets
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            _targets
+            data-raw
+            data-intermediate
+            data-processed
+            dashboard/data
+          key: atlas-${{ runner.os }}-v1-${{ hashFiles('DESCRIPTION', 'renv.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}-complete
       - name: Package the data release
         id: pkg
         run: |
@@ -71,13 +121,17 @@ jobs:
             git commit -m "chore: refresh renv.lock from data build [skip ci]"
             git push
           fi
-      - name: Upload QA report on failure
-        if: failure()
+      - name: Upload diagnostics and QA report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: qa-report
-          path: data-processed/data-quality-report.html
+          name: pipeline-diagnostics
+          path: |
+            diagnostics/
+            data-processed/data-quality-report.html
+            _targets/meta/
           if-no-files-found: ignore
+          retention-days: 14
 
   deploy:
     needs: pipeline
